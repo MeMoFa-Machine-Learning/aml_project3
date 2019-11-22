@@ -101,7 +101,7 @@ def main(debug=False):
     reg_param    = [1]       if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
     gamma_param  = ['scale'] if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
     degree_param = [2]       if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
-    max_iters    = [3000]    if debug else [2000, 2500, 3000, ]
+    max_iters    = [2500]    if debug else [2000, 2500, 3000, ]
 
     parameters = [
         {
