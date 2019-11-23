@@ -88,9 +88,9 @@ def extract_manual_features(samples):
     return feature_extracted_samples
 
 
-def main(debug=False):
+def main(debug=False, outfile="out.csv"):
     output_pathname = "output"
-    output_filepath = ospath.join(output_pathname, "out.csv")
+    output_filepath = ospath.join(output_pathname, outfile)
     training_data_dir = ospath.join("data", "training")
     testing_data_dir = ospath.join("data", "testing")
 
@@ -198,6 +198,7 @@ def main(debug=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process ECG data")
     parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--outfile", required=False, default="out.csv")
     args = parser.parse_args()
 
-    main(debug=args.debug)
+    main(debug=args.debug, outfile=args.outfile)
