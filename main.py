@@ -12,6 +12,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from scipy.signal import find_peaks
 from tqdm import tqdm
 
 import logging
@@ -34,6 +36,13 @@ def read_in_irregular_csv(path_to_file, skip_n_lines=1, debug=False):
                 break
             file_array.append(np.array(row[1:], dtype=np.int16))
     return file_array
+
+
+def perform_data_scaling(x_train, x_test):
+    scaler = StandardScaler()
+    x_train_whitened = scaler.fit_transform(x_train)
+    x_test_whitened = scaler.transform(x_test)
+    return x_train_whitened, x_test_whitened
 
 
 def pairwise(iterable):
@@ -63,14 +72,19 @@ def median_r_amplitude(filtered, rpeaks):
     return np.median(filtered[rpeaks])
 
 
+def ecg_domain(mean_template):
+    return np.max(mean_template) - np.min(mean_template)
+
+
 def extract_manual_features(samples):
     feature_extracted_samples = np.ndarray((len(samples), 4), dtype=np.float64)
     for i, raw_ecg in enumerate(tqdm(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
+        mean_template = np.mean(templates, axis=0)
         feature_extracted_samples[i][0] = average_r_separation(rpeaks)
-        feature_extracted_samples[i][1] = average_r_amplitude(filtered, rpeaks)
+        feature_extracted_samples[i][1] = average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks)
         feature_extracted_samples[i][2] = std_r_amplitude(filtered, rpeaks)
-        feature_extracted_samples[i][3] = median_r_amplitude(filtered, rpeaks)
+        feature_extracted_samples[i][3] = ecg_domain(mean_template)
     return feature_extracted_samples
 
 
@@ -94,6 +108,19 @@ def main(debug=False):
     logging.info("Extracting features...")
     x_train_fsel = extract_manual_features(train_data_x)
     logging.info("Finished extracting features")
+
+    # load raw ECG test data
+    logging.info("Reading in testing data...")
+    test_data_x = read_in_irregular_csv(ospath.join(testing_data_dir, "X_test.csv"), debug=debug)
+    logging.info("Finished reading in data.")
+
+    # Extract the features of testing set
+    logging.info("Extracting features...")
+    x_test_fsel = extract_manual_features(test_data_x)
+    logging.info("Finished extracting features")
+
+    # Preprocessing Step: StandardScaler
+    x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
     # Training Step #1: Grid Search
     x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
@@ -149,16 +176,6 @@ def main(debug=False):
     final_model = Pipeline([('svc', SVC())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_fsel, y_train_orig)
-
-    # load raw ECG test data
-    logging.info("Reading in training data...")
-    test_data_x = read_in_irregular_csv(ospath.join(testing_data_dir, "X_test.csv"), debug=debug)
-    logging.info("Finished reading in data.")
-
-    # Extract the features of testing set
-    logging.info("Extracting features...")
-    x_test_fsel = extract_manual_features(test_data_x)
-    logging.info("Finished extracting features")
 
     # Do the prediction
     y_predict = final_model.predict(x_test_fsel)
