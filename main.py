@@ -14,6 +14,7 @@ from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from scipy.signal import find_peaks
+from AutoEncoder import AutoEncoder
 from tqdm import tqdm
 
 import logging
@@ -77,14 +78,11 @@ def ecg_domain(mean_template):
 
 
 def extract_manual_features(samples):
-    feature_extracted_samples = np.ndarray((len(samples), 4), dtype=np.float64)
-    for i, raw_ecg in enumerate(tqdm(samples)):
+    feature_extracted_samples = np.ndarray((len(samples), 180), dtype=np.float64)
+    for i, raw_ecg in enumerate(samples):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
         mean_template = np.mean(templates, axis=0)
-        feature_extracted_samples[i][0] = average_r_separation(rpeaks)
-        feature_extracted_samples[i][1] = average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks)
-        feature_extracted_samples[i][2] = std_r_amplitude(filtered, rpeaks)
-        feature_extracted_samples[i][3] = ecg_domain(mean_template)
+        feature_extracted_samples[i] = mean_template
     return feature_extracted_samples
 
 
@@ -152,7 +150,7 @@ def main(debug=False, outfile="out.csv"):
     best_models = []
     for kernel_params in parameters:
 
-        pl = Pipeline([('svc', SVC())])
+        pl = Pipeline([('ae', AutoEncoder()), ('svc', SVC())])
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
@@ -173,7 +171,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('svc', SVC())])
+    final_model = Pipeline([('ae', AutoEncoder()), ('svc', SVC())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_fsel, y_train_orig)
 
