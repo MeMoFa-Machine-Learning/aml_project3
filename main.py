@@ -127,10 +127,12 @@ def main(debug=False, outfile="out.csv"):
     degree_param = [2]             if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
     ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 8, 64), (64, 18, 64))
+    ae_epochs    = (10,)           if debug else (10, 30, 60)
 
     parameters = [
         {
             'ae__layers': ae_layers,
+            'ae__epochs': ae_epochs,
             'svc__kernel': ['rbf'],
             'svc__C': reg_param,
             'svc__gamma': gamma_param,
@@ -139,6 +141,7 @@ def main(debug=False, outfile="out.csv"):
         },
         {
             'ae__layers': ae_layers,
+            'ae__epochs': ae_epochs,
             'svc__kernel': ['poly'],
             'svc__C': reg_param,
             'svc__gamma': gamma_param,
@@ -152,7 +155,7 @@ def main(debug=False, outfile="out.csv"):
     best_models = []
     for kernel_params in parameters:
 
-        pl = Pipeline([('ae', AutoEncoder()), ('svc', SVC())])
+        pl = Pipeline([('ae', AutoEncoder()), ('svc', SVC())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme

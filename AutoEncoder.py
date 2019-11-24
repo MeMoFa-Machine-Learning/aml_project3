@@ -8,8 +8,8 @@ from keras.models import Model
 class AutoEncoder(BaseEstimator, TransformerMixin):
 
     def __init__(self, layers=None, epochs=10):
-        self.layers = None
-        self.epochs = 20
+        self.layers = layers
+        self.epochs = epochs
         self.encoder = None
 
     def fit(self, X, y=None):
