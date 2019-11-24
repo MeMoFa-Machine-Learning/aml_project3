@@ -21,7 +21,6 @@ import logging
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(format='%(asctime)s - %(message)s')
 
-
 # Debug parameters
 first_n_lines_input = 50
 
@@ -123,13 +122,15 @@ def main(debug=False, outfile="out.csv"):
     # Training Step #1: Grid Search
     x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
 
-    reg_param    = [1]       if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
-    gamma_param  = ['scale'] if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
-    degree_param = [2]       if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
-    max_iters    = [2500]    if debug else [2000, 2500, 3000, ]
+    reg_param    = [1]             if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
+    gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
+    degree_param = [2]             if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
+    max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
+    ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 8, 64), (64, 18, 64))
 
     parameters = [
         {
+            'ae__layers': ae_layers,
             'svc__kernel': ['rbf'],
             'svc__C': reg_param,
             'svc__gamma': gamma_param,
@@ -137,6 +138,7 @@ def main(debug=False, outfile="out.csv"):
             'svc__class_weight': ['balanced']
         },
         {
+            'ae__layers': ae_layers,
             'svc__kernel': ['poly'],
             'svc__C': reg_param,
             'svc__gamma': gamma_param,
