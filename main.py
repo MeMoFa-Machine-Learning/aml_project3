@@ -7,19 +7,19 @@ from itertools import tee
 from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from scipy.signal import find_peaks
 from tqdm import tqdm
+from keras import backend as K
 
 import logging
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(format='%(asctime)s - %(message)s')
-
 
 # Debug parameters
 first_n_lines_input = 50
@@ -125,55 +125,74 @@ def main(debug=False, outfile="out.csv"):
     # Training Step #1: Grid Search
     x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
 
-    reg_param    = [1]       if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
-    gamma_param  = ['scale'] if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
-    degree_param = [2]       if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
-    max_iters    = [2500]    if debug else [2000, 2500, 3000, ]
+    reg_param    = [1]             if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
+    gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
+    degree_param = [2]             if debug else list(np.logspace(start=1, stop=4, num=3, base=1.5, dtype=int))
+    max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
 
-    parameters = [
+    max_depth         = [3] if debug else [3, 5, 7, 9]
+    min_samples_split = [5] if debug else [2, 3, 4, 5]
+    n_estimators      = [6] if debug else [50, 100, 150]
+
+    models = [
         {
-            'svc__kernel': ['rbf'],
-            'svc__C': reg_param,
-            'svc__gamma': gamma_param,
-            'svc__max_iter': max_iters,
-            'svc__class_weight': ['balanced']
+            'model': SVC,
+            'parameters': {
+                'cm__kernel': ['rbf'],
+                'cm__C': reg_param,
+                'cm__gamma': gamma_param,
+                'cm__max_iter': max_iters,
+                'cm__class_weight': ['balanced']
+            }
         },
         {
-            'svc__kernel': ['poly'],
-            'svc__C': reg_param,
-            'svc__gamma': gamma_param,
-            'svc__degree': degree_param,
-            'svc__max_iter': max_iters,
-            'svc__class_weight': ['balanced']
+            'model': LinearSVC,
+            'parameters': {
+                'cm__C': reg_param,
+                'cm__max_iter': max_iters,
+                'cm__class_weight': ['balanced']
+            }
+        },
+        {
+            'model': RandomForestClassifier,
+            'parameters': {
+                'cm__criterion': ['entropy', 'gini'],
+                'cm__max_depth': max_depth,
+                'cm__min_samples_split': min_samples_split,
+                'cm__n_estimators': n_estimators,
+                'cm__class_weight': ['balanced'],
+            }
         },
     ]
 
     # Perform the cross-validation
     best_models = []
-    for kernel_params in parameters:
+    for model in models:
 
-        pl = Pipeline([('svc', SVC())])
+        pl = Pipeline([('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
-        grid_search = GridSearchCV(pl, kernel_params, scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
+        grid_search = GridSearchCV(pl, model['parameters'], scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
         grid_result = grid_search.fit(x_train_gs, y_train_gs)
 
         # Calculate statistics and calculate on hold-out
-        logging.info("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+        logging.info(
+            "Best for model %s: %f using %s" % (str(model['model']), grid_result.best_score_, grid_result.best_params_))
         y_ho_pred = grid_search.predict(x_ho)
         hold_out_score = f1_score(y_ho_pred, y_ho, average='micro')
-        best_models.append((hold_out_score, grid_result.best_params_))
+        best_models.append((hold_out_score, grid_result.best_params_, model['model']))
         logging.info("Best score on hold-out: {}".format(hold_out_score))
 
     # Pick best params
     final_model_params_i = int(np.argmax(np.array(best_models)[:, 0]))
+    final_model_type = best_models[final_model_params_i][2]
     final_model_params = best_models[final_model_params_i][1]
-    logging.info("Picked the following model: {}".format(final_model_params))
+    logging.info("Picked the following model {} with params: {}".format(str(final_model_type), final_model_params))
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('svc', SVC())])
+    final_model = Pipeline([('cm', final_model_type())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_fsel, y_train_orig)
 
