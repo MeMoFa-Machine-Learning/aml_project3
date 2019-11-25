@@ -124,10 +124,10 @@ def main(debug=False, outfile="out.csv"):
 
     reg_param    = [1]             if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
     gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
-    degree_param = [2]             if debug else list(np.logspace(start=1, stop=6, num=5, base=1.5, dtype=int))
+    degree_param = [2]             if debug else list(np.logspace(start=1, stop=4, num=3, base=1.5, dtype=int))
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
     ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 8, 64), (64, 18, 64))
-    ae_epochs    = (10,)           if debug else (10, 30, 60)
+    ae_epochs    = (10,)           if debug else (10, 20, 40)
 
     parameters = [
         {

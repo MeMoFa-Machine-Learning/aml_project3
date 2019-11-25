@@ -1,5 +1,4 @@
 from sklearn.base import BaseEstimator, TransformerMixin
-from keras.wrappers.scikit_learn import KerasRegressor
 from sklearn.decomposition import PCA
 from keras.layers import Input, Dense
 from keras.models import Model
