@@ -8,12 +8,12 @@ from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC, LinearSVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from scipy.signal import find_peaks
 from AutoEncoder import AutoEncoder
 from tqdm import tqdm
 from keras import backend as K
@@ -130,6 +130,10 @@ def main(debug=False, outfile="out.csv"):
     ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 5, 64), (64, 18, 64))
     ae_epochs    = (10,)           if debug else (10, 20, 40)
 
+    max_depth         = [3] if debug else [3, 5, 7, 9]
+    min_samples_split = [5] if debug else [2, 3, 4, 5]
+    n_estimators      = [6] if debug else [50, 100, 150]
+
     models = [
         {
             'model': SVC,
@@ -151,6 +155,18 @@ def main(debug=False, outfile="out.csv"):
                 'cm__C': reg_param,
                 'cm__max_iter': max_iters,
                 'cm__class_weight': ['balanced']
+            }
+        },
+        {
+            'model': RandomForestClassifier,
+            'parameters': {
+                'ae__layers': ae_layers,
+                'ae__epochs': ae_epochs,
+                'cm__criterion': ['entropy', 'gini'],
+                'cm__max_depth': max_depth,
+                'cm__min_samples_split': min_samples_split,
+                'cm__n_estimators': n_estimators,
+                'cm__class_weight': ['balanced'],
             }
         },
     ]
