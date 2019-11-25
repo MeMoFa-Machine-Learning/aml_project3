@@ -127,7 +127,7 @@ def main(debug=False, outfile="out.csv"):
     gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
     degree_param = [2]             if debug else list(np.logspace(start=1, stop=4, num=3, base=1.5, dtype=int))
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
-    ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 5, 64), (64, 18, 64))
+    ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 25, 64), (64, 18, 64))
     ae_epochs    = (10,)           if debug else (10, 20, 40)
 
     max_depth         = [3] if debug else [3, 5, 7, 9]
@@ -176,7 +176,7 @@ def main(debug=False, outfile="out.csv"):
     for model in models:
         K.clear_session()
 
-        pl = Pipeline([('ae', AutoEncoder()), ('cm', model['model']())])
+        pl = Pipeline([('ae', AutoEncoder()), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
