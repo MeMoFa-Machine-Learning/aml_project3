@@ -7,7 +7,7 @@ from itertools import tee
 from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from scipy.signal import find_peaks
 from AutoEncoder import AutoEncoder
 from tqdm import tqdm
+from keras import backend as K
 
 import logging
 logging.getLogger().setLevel(logging.INFO)
@@ -78,7 +79,7 @@ def ecg_domain(mean_template):
 
 def extract_manual_features(samples):
     feature_extracted_samples = np.ndarray((len(samples), 180), dtype=np.float64)
-    for i, raw_ecg in enumerate(samples):
+    for i, raw_ecg in tqdm(enumerate(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
         mean_template = np.mean(templates, axis=0)
         feature_extracted_samples[i] = mean_template
@@ -126,57 +127,62 @@ def main(debug=False, outfile="out.csv"):
     gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
     degree_param = [2]             if debug else list(np.logspace(start=1, stop=4, num=3, base=1.5, dtype=int))
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
-    ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 8, 64), (64, 18, 64))
+    ae_layers    = ((64, 10, 64),) if debug else ((64, 10, 64), (64, 5, 64), (64, 18, 64))
     ae_epochs    = (10,)           if debug else (10, 20, 40)
 
-    parameters = [
+    models = [
         {
-            'ae__layers': ae_layers,
-            'ae__epochs': ae_epochs,
-            'svc__kernel': ['rbf'],
-            'svc__C': reg_param,
-            'svc__gamma': gamma_param,
-            'svc__max_iter': max_iters,
-            'svc__class_weight': ['balanced']
+            'model': SVC,
+            'parameters': {
+                'ae__layers': ae_layers,
+                'ae__epochs': ae_epochs,
+                'cm__kernel': ['rbf'],
+                'cm__C': reg_param,
+                'cm__gamma': gamma_param,
+                'cm__max_iter': max_iters,
+                'cm__class_weight': ['balanced']
+            }
         },
         {
-            'ae__layers': ae_layers,
-            'ae__epochs': ae_epochs,
-            'svc__kernel': ['poly'],
-            'svc__C': reg_param,
-            'svc__gamma': gamma_param,
-            'svc__degree': degree_param,
-            'svc__max_iter': max_iters,
-            'svc__class_weight': ['balanced']
+            'model': LinearSVC,
+            'parameters': {
+                'ae__layers': ae_layers,
+                'ae__epochs': ae_epochs,
+                'cm__C': reg_param,
+                'cm__max_iter': max_iters,
+                'cm__class_weight': ['balanced']
+            }
         },
     ]
 
     # Perform the cross-validation
     best_models = []
-    for kernel_params in parameters:
+    for model in models:
+        K.clear_session()
 
-        pl = Pipeline([('ae', AutoEncoder()), ('svc', SVC())], memory=".")
+        pl = Pipeline([('ae', AutoEncoder()), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
-        grid_search = GridSearchCV(pl, kernel_params, scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
+        grid_search = GridSearchCV(pl, model['parameters'], scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
         grid_result = grid_search.fit(x_train_gs, y_train_gs)
 
         # Calculate statistics and calculate on hold-out
-        logging.info("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+        logging.info("Best for model %s: %f using %s" % (str(model['model']), grid_result.best_score_, grid_result.best_params_))
         y_ho_pred = grid_search.predict(x_ho)
         hold_out_score = f1_score(y_ho_pred, y_ho, average='micro')
-        best_models.append((hold_out_score, grid_result.best_params_))
+        best_models.append((hold_out_score, grid_result.best_params_, model['model']))
         logging.info("Best score on hold-out: {}".format(hold_out_score))
 
     # Pick best params
     final_model_params_i = int(np.argmax(np.array(best_models)[:, 0]))
+    final_model_type = best_models[final_model_params_i][2]
     final_model_params = best_models[final_model_params_i][1]
-    logging.info("Picked the following model: {}".format(final_model_params))
+    logging.info("Picked the following model {} with params: {}".format(str(final_model_type), final_model_params))
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('ae', AutoEncoder()), ('svc', SVC())])
+    final_model = Pipeline([('ae', AutoEncoder()), ('cm', final_model_type())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_fsel, y_train_orig)
 
