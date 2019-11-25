@@ -176,7 +176,7 @@ def main(debug=False, outfile="out.csv"):
     for model in models:
         K.clear_session()
 
-        pl = Pipeline([('ae', AutoEncoder()), ('cm', model['model']())], memory=".")
+        pl = Pipeline([('ae', AutoEncoder()), ('cm', model['model']())])
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
