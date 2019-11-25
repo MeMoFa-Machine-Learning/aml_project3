@@ -76,8 +76,16 @@ def ecg_domain(mean_template):
     return np.max(mean_template) - np.min(mean_template)
 
 
+def extract_p_peak(mean_template):
+    return np.max(mean_template[:35])
+
+
+def extract_t_peak(mean_template):
+    return np.max(mean_template[100:])
+
+
 def extract_manual_features(samples):
-    feature_extracted_samples = np.ndarray((len(samples), 4), dtype=np.float64)
+    feature_extracted_samples = np.ndarray((len(samples), 6), dtype=np.float64)
     for i, raw_ecg in enumerate(tqdm(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
         mean_template = np.mean(templates, axis=0)
@@ -85,6 +93,8 @@ def extract_manual_features(samples):
         feature_extracted_samples[i][1] = average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks)
         feature_extracted_samples[i][2] = std_r_amplitude(filtered, rpeaks)
         feature_extracted_samples[i][3] = ecg_domain(mean_template)
+        feature_extracted_samples[i][4] = extract_p_peak(mean_template)
+        feature_extracted_samples[i][5] = extract_t_peak(mean_template)
     return feature_extracted_samples
 
 
