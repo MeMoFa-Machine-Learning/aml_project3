@@ -16,7 +16,6 @@ from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-from keras import backend as K
 
 import logging
 logging.getLogger().setLevel(logging.INFO)
