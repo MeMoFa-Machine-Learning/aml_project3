@@ -14,6 +14,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from xgboost.sklearn import XGBClassifier
 from tqdm import tqdm
 from keras import backend as K
 
@@ -158,6 +159,12 @@ def main(debug=False, outfile="out.csv"):
     min_samples_split = [5] if debug else [2, 3, 4, 5]
     n_estimators      = [6] if debug else [50, 100, 150]
 
+    xg_max_depth          = [3] if debug else (3, 4, 5, 6)
+    xg_eta                = [0.1] if debug else np.logspace(-2, -1, 3)
+    xg_gamma              = [0] if debug else (0, 1, 5)
+    xg_reg_lambda         = [1.] if debug else np.logspace(-2, 1, 4)
+    xg_col_sample_by_tree = [0.1] if debug else (0.1, 0.5, 1)
+
     models = [
         {
             'model': SVC,
@@ -187,6 +194,17 @@ def main(debug=False, outfile="out.csv"):
                 'cm__class_weight': ['balanced'],
             }
         },
+        {
+            'model': XGBClassifier,
+            'parameters': {
+                'cm__max_depth': xg_max_depth,
+                'cm__eta': xg_eta,
+                'cm__gamma': xg_gamma,
+                'cm__reg_lambda': xg_reg_lambda,
+                'cm__colsample_bytree': xg_col_sample_by_tree,
+                'cm__objective': ('multi:softmax',),
+            }
+        }
     ]
 
     # Perform the cross-validation
