@@ -8,13 +8,13 @@ from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC, LinearSVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from xgboost.sklearn import XGBClassifier
 from tqdm import tqdm
 from keras import backend as K
 
@@ -152,18 +152,17 @@ def main(debug=False, outfile="out.csv"):
 
     reg_param    = [1]             if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
     gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
-    degree_param = [2]             if debug else list(np.logspace(start=1, stop=4, num=3, base=1.5, dtype=int))
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
 
     max_depth         = [3] if debug else [3, 5, 7, 9]
     min_samples_split = [5] if debug else [2, 3, 4, 5]
     n_estimators      = [6] if debug else [50, 100, 150]
 
-    xg_max_depth          = [3] if debug else (3, 4, 5, 6)
-    xg_eta                = [0.1] if debug else np.logspace(-2, -1, 3)
-    xg_gamma              = [0] if debug else (0, 1, 5)
-    xg_reg_lambda         = [1.] if debug else np.logspace(-2, 1, 4)
-    xg_col_sample_by_tree = [0.1] if debug else (0.1, 0.5, 1)
+    knn_neighbors = [3]         if debug else [3, 5, 7]
+    knn_weights   = ['uniform'] if debug else ['uniform', 'distance']
+    knn_algorithm = ['brute']   if debug else ['ball_tree', 'kd_tree', 'brute']
+    knn_p         = [2]         if debug else [1, 2, 3]
+    knn_leaf_size = [30]        if debug else [20, 30, 40]
 
     models = [
         {
@@ -195,14 +194,13 @@ def main(debug=False, outfile="out.csv"):
             }
         },
         {
-            'model': XGBClassifier,
+            'model': KNeighborsClassifier,
             'parameters': {
-                'cm__max_depth': xg_max_depth,
-                'cm__eta': xg_eta,
-                'cm__gamma': xg_gamma,
-                'cm__reg_lambda': xg_reg_lambda,
-                'cm__colsample_bytree': xg_col_sample_by_tree,
-                'cm__objective': ('multi:softmax',),
+                'cm__n_neighbors': knn_neighbors,
+                'cm__weights': knn_weights,
+                'cm__algorithm': knn_algorithm,
+                'cm__leaf_size': knn_leaf_size,
+                'cm__p': knn_p
             }
         }
     ]
