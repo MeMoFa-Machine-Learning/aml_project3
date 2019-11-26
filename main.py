@@ -17,7 +17,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from statistics import median as pymedian
-import neurokit as nk
 
 
 import logging
