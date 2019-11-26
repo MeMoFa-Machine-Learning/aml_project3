@@ -8,7 +8,7 @@ from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC, LinearSVC
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
@@ -81,9 +81,18 @@ def extract_manual_features(samples):
     feature_extracted_samples = np.ndarray((len(samples), 180), dtype=np.float64)
     for i, raw_ecg in tqdm(enumerate(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
-        mean_template = np.mean(templates, axis=0)
+        mean_template = np.median(templates, axis=0)
         feature_extracted_samples[i] = mean_template
     return feature_extracted_samples
+
+
+def find_outliers(x):
+    outlier_indices = np.zeros(x.shape[0], dtype=np.bool)
+    isolation_forest = IsolationForest(contamination="auto", behaviour="new")
+    isolation_forest.fit(x)
+    predictions = isolation_forest.predict(x)
+    outlier_indices[predictions == 1] = 1
+    return outlier_indices
 
 
 def main(debug=False, outfile="out.csv"):
@@ -119,6 +128,11 @@ def main(debug=False, outfile="out.csv"):
 
     # Preprocessing Step: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
+
+    # Preprocessing step #2: Outlier detection and removal
+    outlier_indices = find_outliers(x_train_fsel)
+    x_train_fsel = x_train_fsel[outlier_indices]
+    y_train_orig = y_train_orig[outlier_indices]
 
     # Training Step #1: Grid Search
     x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
