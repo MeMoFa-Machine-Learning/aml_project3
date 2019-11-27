@@ -7,6 +7,7 @@ from itertools import tee
 from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import SelectKBest
 from sklearn.svm import SVC, LinearSVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
@@ -200,8 +201,8 @@ def main(debug=False, outfile="out.csv"):
     gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
     max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
 
-    max_depth         = [3] if debug else [3, 5, 7, 9]
-    min_samples_split = [5] if debug else [2, 3, 4, 5]
+    max_depth         = [3] if debug else [3, 5, 7, 9, 11]
+    min_samples_split = [5] if debug else [2, 3, 4, 5, 6]
     n_estimators      = [6] if debug else [50, 100, 150]
 
     knn_neighbors = [3]         if debug else [3, 5, 7]
@@ -210,10 +211,13 @@ def main(debug=False, outfile="out.csv"):
     knn_p         = [2]         if debug else [1, 2, 3]
     knn_leaf_size = [30]        if debug else [20, 30, 40]
 
+    k_best_features = [x_train_fsel.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=4, endpoint=True, dtype=int))
+
     models = [
         {
             'model': SVC,
             'parameters': {
+                'fs__k': k_best_features,
                 'cm__kernel': ['rbf'],
                 'cm__C': reg_param,
                 'cm__gamma': gamma_param,
@@ -224,6 +228,7 @@ def main(debug=False, outfile="out.csv"):
         {
             'model': LinearSVC,
             'parameters': {
+                'fs__k': k_best_features,
                 'cm__C': reg_param,
                 'cm__max_iter': max_iters,
                 'cm__class_weight': ['balanced']
@@ -232,6 +237,7 @@ def main(debug=False, outfile="out.csv"):
         {
             'model': RandomForestClassifier,
             'parameters': {
+                'fs__k': k_best_features,
                 'cm__criterion': ['entropy', 'gini'],
                 'cm__max_depth': max_depth,
                 'cm__min_samples_split': min_samples_split,
@@ -242,6 +248,7 @@ def main(debug=False, outfile="out.csv"):
         {
             'model': KNeighborsClassifier,
             'parameters': {
+                'fs__k': k_best_features,
                 'cm__n_neighbors': knn_neighbors,
                 'cm__weights': knn_weights,
                 'cm__algorithm': knn_algorithm,
@@ -255,7 +262,7 @@ def main(debug=False, outfile="out.csv"):
     best_models = []
     for model in models:
 
-        pl = Pipeline([('cm', model['model']())], memory=".")
+        pl = Pipeline([('fs', SelectKBest()), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
@@ -278,7 +285,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('cm', final_model_type())])
+    final_model = Pipeline([('fs', SelectKBest()), ('cm', final_model_type())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_fsel, y_train_orig)
 
