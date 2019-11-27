@@ -8,8 +8,9 @@ from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import SelectKBest
-from sklearn.svm import SVC, LinearSVC
+from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
@@ -155,6 +156,25 @@ def find_outliers(x):
     return outlier_indices
 
 
+def calculate_meta_features(x_ho, y_ho, x_train, x_test):
+    lda = LinearDiscriminantAnalysis()
+    lda.fit(x_ho, y_ho)
+    x_train_lda = lda.predict(x_train)
+    x_test_lda = lda.predict(x_test)
+
+    qda = QuadraticDiscriminantAnalysis()
+    qda.fit(x_ho, y_ho)
+    x_train_qda = qda.predict(x_train)
+    x_test_qda = qda.predict(x_test)
+
+    rfc = RandomForestClassifier(n_estimators=30)
+    rfc.fit(x_ho, y_ho)
+    x_train_rfc = rfc.predict(x_train)
+    x_test_rfc = rfc.predict(x_test)
+
+    return np.array((x_train_lda, x_train_qda, x_train_rfc)).transpose(), np.array((x_test_lda, x_test_qda, x_test_rfc)).transpose()
+
+
 def main(debug=False, outfile="out.csv"):
     output_pathname = "output"
     output_filepath = ospath.join(output_pathname, outfile)
@@ -186,54 +206,31 @@ def main(debug=False, outfile="out.csv"):
     x_test_fsel = extract_manual_features(test_data_x)
     logging.info("Finished extracting features")
 
-    # Preprocessing Step #1: StandardScaler
+    # Preprocessing Step for meta-feature calculation: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
+    # Meta-features calculation
+    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.2, random_state=0)
+    meta_features_train, meta_features_test = calculate_meta_features(x_ho, y_ho, x_train_gs, x_test_fsel)
+    x_train_gs = np.hstack((x_train_gs, meta_features_train))
+    x_test_fsel = np.hstack((x_test_fsel, meta_features_test))
+
+    # Preprocessing Step #1: StandardScaler
+    x_train_gs, x_test_fsel = perform_data_scaling(x_train_gs, x_test_fsel)
+
     # Preprocessing step #2: Outlier detection and removal
-    outlier_indices = find_outliers(x_train_fsel)
-    x_train_fsel = x_train_fsel[outlier_indices]
-    y_train_orig = y_train_orig[outlier_indices]
+    outlier_indices = find_outliers(x_train_gs)
+    x_train_gs = x_train_gs[outlier_indices]
+    y_train_gs = y_train_gs[outlier_indices]
 
-    # Training Step #1: Grid Search
-    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
-
-    reg_param    = [1]             if debug else list(np.logspace(start=-2, stop=2, num=5, endpoint=True, base=10))
-    gamma_param  = ['scale']       if debug else list(np.logspace(start=-3, stop=2, num=5, endpoint=True, base=10)) + ['scale']
-    max_iters    = [2500]          if debug else [2000, 2500, 3000, ]
-
+    # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6]
     n_estimators      = [6] if debug else [50, 100, 150]
 
-    knn_neighbors = [3]         if debug else [3, 5, 7]
-    knn_weights   = ['uniform'] if debug else ['uniform', 'distance']
-    knn_algorithm = ['brute']   if debug else ['ball_tree', 'kd_tree', 'brute']
-    knn_p         = [2]         if debug else [1, 2, 3]
-    knn_leaf_size = [30]        if debug else [20, 30, 40]
-
-    k_best_features = [x_train_fsel.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=4, endpoint=True, dtype=int))
+    k_best_features = [x_train_gs.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=4, endpoint=True, dtype=int))
 
     models = [
-        {
-            'model': SVC,
-            'parameters': {
-                'fs__k': k_best_features,
-                'cm__kernel': ['rbf'],
-                'cm__C': reg_param,
-                'cm__gamma': gamma_param,
-                'cm__max_iter': max_iters,
-                'cm__class_weight': ['balanced']
-            }
-        },
-        {
-            'model': LinearSVC,
-            'parameters': {
-                'fs__k': k_best_features,
-                'cm__C': reg_param,
-                'cm__max_iter': max_iters,
-                'cm__class_weight': ['balanced']
-            }
-        },
         {
             'model': RandomForestClassifier,
             'parameters': {
@@ -243,17 +240,6 @@ def main(debug=False, outfile="out.csv"):
                 'cm__min_samples_split': min_samples_split,
                 'cm__n_estimators': n_estimators,
                 'cm__class_weight': ['balanced'],
-            }
-        },
-        {
-            'model': KNeighborsClassifier,
-            'parameters': {
-                'fs__k': k_best_features,
-                'cm__n_neighbors': knn_neighbors,
-                'cm__weights': knn_weights,
-                'cm__algorithm': knn_algorithm,
-                'cm__leaf_size': knn_leaf_size,
-                'cm__p': knn_p
             }
         }
     ]
@@ -269,13 +255,10 @@ def main(debug=False, outfile="out.csv"):
         grid_search = GridSearchCV(pl, model['parameters'], scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
         grid_result = grid_search.fit(x_train_gs, y_train_gs)
 
+        best_models.append((1, grid_result.best_params_, model['model']))
         # Calculate statistics and calculate on hold-out
         logging.info(
             "Best for model %s: %f using %s" % (str(model['model']), grid_result.best_score_, grid_result.best_params_))
-        y_ho_pred = grid_search.predict(x_ho)
-        hold_out_score = f1_score(y_ho_pred, y_ho, average='micro')
-        best_models.append((hold_out_score, grid_result.best_params_, model['model']))
-        logging.info("Best score on hold-out: {}".format(hold_out_score))
 
     # Pick best params
     final_model_params_i = int(np.argmax(np.array(best_models)[:, 0]))
@@ -287,7 +270,7 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Fitting the final model...")
     final_model = Pipeline([('fs', SelectKBest()), ('cm', final_model_type())])
     final_model.set_params(**final_model_params)
-    final_model.fit(x_train_fsel, y_train_orig)
+    final_model.fit(x_train_gs, y_train_gs)
 
     # Do the prediction
     y_predict = final_model.predict(x_test_fsel)
