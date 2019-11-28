@@ -10,8 +10,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import SelectKBest
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.tree import DecisionTreeClassifier as DTC
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
-from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
@@ -147,32 +149,23 @@ def extract_manual_features(samples):
     return np.array(manual_features_array)
 
 
-def find_outliers(x):
-    outlier_indices = np.zeros(x.shape[0], dtype=np.bool)
-    isolation_forest = IsolationForest(contamination="auto", behaviour="new")
-    isolation_forest.fit(x)
-    predictions = isolation_forest.predict(x)
-    outlier_indices[predictions == 1] = 1
-    return outlier_indices
+def calculate_pre_features(x_pre, y_pre, x_train, x_test):
+    classifiers = [
+        RandomForestClassifier(class_weight='balanced'),
+        KNeighborsClassifier(),
+        SVC(class_weight="balanced"),
+        GaussianNB(),
+        QuadraticDiscriminantAnalysis(),
+        LinearDiscriminantAnalysis()
+    ]
 
+    x_train_pres, x_test_pres = ([], [])
+    for classifier in classifiers:
+        classifier.fit(x_pre, y_pre)
+        x_train_pres.append(classifier.predict(x_train))
+        x_test_pres.append(classifier.predict(x_test))
 
-def calculate_meta_features(x_ho, y_ho, x_train, x_test):
-    lda = LinearDiscriminantAnalysis()
-    lda.fit(x_ho, y_ho)
-    x_train_lda = lda.predict(x_train)
-    x_test_lda = lda.predict(x_test)
-
-    qda = QuadraticDiscriminantAnalysis()
-    qda.fit(x_ho, y_ho)
-    x_train_qda = qda.predict(x_train)
-    x_test_qda = qda.predict(x_test)
-
-    rfc = RandomForestClassifier(n_estimators=30)
-    rfc.fit(x_ho, y_ho)
-    x_train_rfc = rfc.predict(x_train)
-    x_test_rfc = rfc.predict(x_test)
-
-    return np.array((x_train_lda, x_train_qda, x_train_rfc)).transpose(), np.array((x_test_lda, x_test_qda, x_test_rfc)).transpose()
+    return np.array(x_train_pres).transpose(), np.array(x_test_pres).transpose()
 
 
 def main(debug=False, outfile="out.csv"):
@@ -209,18 +202,21 @@ def main(debug=False, outfile="out.csv"):
     # Preprocessing Step for meta-feature calculation: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
-    # Meta-features calculation
-    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.2, random_state=0)
-    meta_features_train, meta_features_test = calculate_meta_features(x_ho, y_ho, x_train_gs, x_test_fsel)
-    x_train_gs = np.hstack((x_train_gs, meta_features_train))
-    x_test_fsel = np.hstack((x_test_fsel, meta_features_test))
+    # Class-features calculation
+    x_train_rest, x_feature, y_train_rest, y_feature = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
+
+    class_features_train, class_features_test = calculate_pre_features(x_feature, y_feature, x_train_rest, x_test_fsel)
+    x_train_rest = np.hstack((x_train_rest, class_features_train))
+    x_test_fsel = np.hstack((x_test_fsel, class_features_test))
 
     # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6, 7]
     n_estimators      = [6] if debug else [50, 200, 350, 500]
 
-    k_best_features = [x_train_gs.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_gs.shape[1], num=5, endpoint=True, dtype=int))
+    ada_base_estimators = [DTC(max_depth=3)] if debug else [DTC(max_depth=3), DTC(max_depth=1)]
+
+    k_best_features = [x_train_rest.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_rest.shape[1], num=5, endpoint=True, dtype=int))
 
     models = [
         {
@@ -233,10 +229,20 @@ def main(debug=False, outfile="out.csv"):
                 'cm__n_estimators': n_estimators,
                 'cm__class_weight': ['balanced'],
             }
+        },
+        {
+            'model': AdaBoostClassifier,
+            'parameters': {
+                'fs__k': k_best_features,
+                'cm__n_estimators': n_estimators,
+                'cm__base_estimator': ada_base_estimators,
+            }
         }
     ]
 
     # Perform the cross-validation
+    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_rest, y_train_rest, test_size=0.1, random_state=0)
+
     best_models = []
     for model in models:
 
@@ -246,11 +252,13 @@ def main(debug=False, outfile="out.csv"):
         # C-support vector classification according to a one-vs-one scheme
         grid_search = GridSearchCV(pl, model['parameters'], scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
         grid_result = grid_search.fit(x_train_gs, y_train_gs)
-
-        best_models.append((1, grid_result.best_params_, model['model']))
         # Calculate statistics and calculate on hold-out
         logging.info(
             "Best for model %s: %f using %s" % (str(model['model']), grid_result.best_score_, grid_result.best_params_))
+        y_ho_pred = grid_search.predict(x_ho)
+        hold_out_score = f1_score(y_ho_pred, y_ho, average='micro')
+        best_models.append((hold_out_score, grid_result.best_params_, model['model']))
+        logging.info("Best score on hold-out: {}".format(hold_out_score))
 
     # Pick best params
     final_model_params_i = int(np.argmax(np.array(best_models)[:, 0]))
