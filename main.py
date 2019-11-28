@@ -228,7 +228,7 @@ def main(debug=False, outfile="out.csv"):
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6]
     n_estimators      = [6] if debug else [50, 100, 150]
 
-    k_best_features = [x_train_gs.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=4, endpoint=True, dtype=int))
+    k_best_features = [x_train_gs.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_gs.shape[1], num=4, endpoint=True, dtype=int))
 
     models = [
         {
