@@ -215,11 +215,6 @@ def main(debug=False, outfile="out.csv"):
     x_train_gs = np.hstack((x_train_gs, meta_features_train))
     x_test_fsel = np.hstack((x_test_fsel, meta_features_test))
 
-    # Preprocessing step #2: Outlier detection and removal
-    outlier_indices = find_outliers(x_train_gs)
-    x_train_gs = x_train_gs[outlier_indices]
-    y_train_gs = y_train_gs[outlier_indices]
-
     # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6, 7]
