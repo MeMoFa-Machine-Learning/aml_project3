@@ -162,10 +162,7 @@ def extract_manual_features(samples):
 
 def calculate_pre_features(x_pre, y_pre, x_train, x_test):
     classifiers = [
-        RandomForestClassifier(class_weight='balanced'),
-        KNeighborsClassifier(),
-        SVC(class_weight="balanced"),
-        GaussianNB(),
+        RandomForestClassifier(class_weight='balanced', n_estimators=30),
         QuadraticDiscriminantAnalysis(),
         LinearDiscriminantAnalysis()
     ]
@@ -223,15 +220,15 @@ def main(debug=False, outfile="out.csv"):
     # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6, 7]
-    n_estimators      = [6] if debug else [50, 200, 350, 500]
+    n_estimators      = [6] if debug else [50, 100, 200, 350, 500]
 
     adaboost_tree_selection = [
-        DTC(max_depth=1, class_weight='balanced'),
-        DTC(max_depth=3, class_weight='balanced'),
-        DTC(max_depth=5, class_weight='balanced'),
-        DTC(max_depth=7, class_weight='balanced'),
-        DTC(max_depth=9, class_weight='balanced'),
-        DTC(max_depth=11, class_weight='balanced')
+        DTC(max_depth=1, class_weight='balanced', min_samples_split=5),
+        DTC(max_depth=3, class_weight='balanced', min_samples_split=5),
+        DTC(max_depth=5, class_weight='balanced', min_samples_split=5),
+        DTC(max_depth=7, class_weight='balanced', min_samples_split=5),
+        DTC(max_depth=9, class_weight='balanced', min_samples_split=5),
+        DTC(max_depth=11, class_weight='balanced', min_samples_split=5)
     ]
 
     ada_base_estimators = [DTC(max_depth=3)] if debug else adaboost_tree_selection
