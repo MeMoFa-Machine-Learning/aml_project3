@@ -16,6 +16,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from keras import backend as K
+import neurokit as nk
+from scipy.stats import iqr
+import statistics
 
 import logging
 logging.getLogger().setLevel(logging.INFO)
@@ -52,12 +55,20 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-def average_r_separation(rpeaks):
+def extract_rr_interval(rpeaks):
     sum_of_diff = 0
     pairs = list(pairwise(rpeaks))
+    rr_intervals = []
     for pair in pairs:
-        sum_of_diff += pair[1] - pair[0]
-    return sum_of_diff / len(pairs)
+        diff = pair[1] - pair[0]
+        sum_of_diff += diff
+        rr_intervals.append(diff)
+    average_rr_interval = sum_of_diff / len(pairs)
+    rr_intervals = sorted(rr_intervals)
+    median_rr_interval = statistics.median(rr_intervals)
+    q1, q3 = np.percentile(rr_intervals, [25, 75])
+    iqr = q3 - q1
+    return average_rr_interval, median_rr_interval, iqr
 
 
 def average_r_amplitude(filtered, rpeaks):
@@ -72,30 +83,71 @@ def median_r_amplitude(filtered, rpeaks):
     return np.median(filtered[rpeaks])
 
 
+def iqr_r_amplitude(filtered, rpeaks):
+    q1, q3 = np.percentile(filtered[rpeaks], [25, 75])
+    iqr = q3 - q1
+    return iqr
+
+
 def ecg_domain(mean_template):
     return np.max(mean_template) - np.min(mean_template)
 
 
+def extract_r_peak(mean_template):
+    return np.max(mean_template), np.argmax(mean_template)
+
+
 def extract_p_peak(mean_template):
-    return np.max(mean_template[:35])
+    return np.max(mean_template[:35]), np.argmax(mean_template[:35])
 
 
 def extract_t_peak(mean_template):
-    return np.max(mean_template[100:])
+    return np.max(mean_template[100:]), np.argmax(mean_template[100:])
 
 
 def extract_manual_features(samples):
-    feature_extracted_samples = np.ndarray((len(samples), 6), dtype=np.float64)
+    manual_features_array = []
     for i, raw_ecg in enumerate(tqdm(samples)):
-        ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300, show=False)
+        ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300,
+                                                                                           show=False)
         mean_template = np.mean(templates, axis=0)
-        feature_extracted_samples[i][0] = average_r_separation(rpeaks)
-        feature_extracted_samples[i][1] = average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks)
-        feature_extracted_samples[i][2] = std_r_amplitude(filtered, rpeaks)
-        feature_extracted_samples[i][3] = ecg_domain(mean_template)
-        feature_extracted_samples[i][4] = extract_p_peak(mean_template)
-        feature_extracted_samples[i][5] = extract_t_peak(mean_template)
-    return feature_extracted_samples
+
+        feature_extracted_samples = []
+        rr_interval_statistics = extract_rr_interval(rpeaks)
+        feature_extracted_samples.append(rr_interval_statistics[0])  # average RR interval
+        feature_extracted_samples.append(rr_interval_statistics[1])  # median RR interval
+        feature_extracted_samples.append(rr_interval_statistics[2])  # IQR RR interval
+        feature_extracted_samples.append(average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks))
+        feature_extracted_samples.append(std_r_amplitude(filtered, rpeaks))  # standard deviation R amplitude
+        feature_extracted_samples.append(iqr_r_amplitude(filtered, rpeaks))  # IQR R amplitude
+        feature_extracted_samples.append(ecg_domain(mean_template))
+        # average peak amplitudes and indices
+        p_peak = extract_p_peak(mean_template)
+        t_peak = extract_t_peak(mean_template)
+        r_peak = extract_r_peak(mean_template)
+        feature_extracted_samples.append(p_peak[0])  # average amplitude of P peak
+        feature_extracted_samples.append(t_peak[0])  # average amplitude of T peak
+        feature_extracted_samples.append(r_peak[1] - p_peak[1])  # average PR interval
+        feature_extracted_samples.append(t_peak[1] - r_peak[1])  # average RT interval
+        # slope of P peak: a1
+        feature_extracted_samples.append((p_peak[0] - mean_template[p_peak[1]-2]) / (p_peak[1] - (p_peak[1]-2)))
+        # slope of P peak: a2
+        feature_extracted_samples.append((p_peak[0] - mean_template[p_peak[1]+2]) / (p_peak[1] - (p_peak[1]+2)))
+        # slope of R peak: a3
+        feature_extracted_samples.append((r_peak[0] - mean_template[r_peak[1]-2]) / (r_peak[1] - (r_peak[1]-2)))
+        # slope of R peak: a4
+        feature_extracted_samples.append((r_peak[0] - mean_template[r_peak[1]+2]) / (r_peak[1] - (r_peak[1]+2)))
+        # slope of T peak: a5
+        feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1]-2]) / (t_peak[1] - (t_peak[1]-2)))
+        # slope of T peak: a6
+        feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1]+2]) / (t_peak[1] - (t_peak[1]+2)))
+
+        hrv = nk.bio_ecg.ecg_hrv(rpeaks=rpeaks, sampling_rate=300)
+        hrv = hrv.values
+        feature_extracted_samples.extend(hrv)
+
+        manual_features_array.append(feature_extracted_samples)
+    return np.array(manual_features_array)
 
 
 def main(debug=False, outfile="out.csv"):
