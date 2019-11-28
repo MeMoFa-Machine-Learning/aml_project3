@@ -97,7 +97,8 @@ def ecg_domain(mean_template):
 
 
 def extract_r_peak(mean_template):
-    return np.max(mean_template), np.argmax(mean_template)
+    interval_max_i = np.argmax(mean_template[30:90])
+    return np.max(mean_template[30:90]), interval_max_i + 30
 
 
 def extract_p_peak(mean_template):
@@ -106,6 +107,14 @@ def extract_p_peak(mean_template):
 
 def extract_t_peak(mean_template):
     return np.max(mean_template[100:]), np.argmax(mean_template[100:])
+
+
+def std_t_peak(templates):
+    return np.mean(np.std(templates[:, 100:], axis=0))
+
+
+def std_p_peak(templates):
+    return np.mean(np.std(templates[:, :30], axis=0))
 
 
 def extract_manual_features(samples):
@@ -124,6 +133,8 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(std_r_amplitude(filtered, rpeaks))  # standard deviation R amplitude
         feature_extracted_samples.append(iqr_r_amplitude(filtered, rpeaks))  # IQR R amplitude
         feature_extracted_samples.append(ecg_domain(mean_template))
+        feature_extracted_samples.append(std_p_peak(templates))
+        feature_extracted_samples.append(std_t_peak(templates))
         # average peak amplitudes and indices
         p_peak = extract_p_peak(mean_template)
         t_peak = extract_t_peak(mean_template)
@@ -214,7 +225,16 @@ def main(debug=False, outfile="out.csv"):
     min_samples_split = [5] if debug else [2, 3, 4, 5, 6, 7]
     n_estimators      = [6] if debug else [50, 200, 350, 500]
 
-    ada_base_estimators = [DTC(max_depth=3)] if debug else [DTC(max_depth=3), DTC(max_depth=1)]
+    adaboost_tree_selection = [
+        DTC(max_depth=1, class_weight='balanced'),
+        DTC(max_depth=3, class_weight='balanced'),
+        DTC(max_depth=5, class_weight='balanced'),
+        DTC(max_depth=7, class_weight='balanced'),
+        DTC(max_depth=9, class_weight='balanced'),
+        DTC(max_depth=11, class_weight='balanced')
+    ]
+
+    ada_base_estimators = [DTC(max_depth=3)] if debug else adaboost_tree_selection
 
     k_best_features = [x_train_rest.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_rest.shape[1], num=5, endpoint=True, dtype=int))
 
