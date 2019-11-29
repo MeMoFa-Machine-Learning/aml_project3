@@ -7,11 +7,9 @@ from itertools import tee
 from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import SelectKBest, RFE
-from sklearn.model_selection import ParameterGrid
-from sklearn.tree import DecisionTreeClassifier as DTC
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.feature_selection import SelectKBest
+from sklearn.neighbors import KNeighborsClassifier as KNC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
@@ -250,24 +248,35 @@ def main(debug=False, outfile="out.csv"):
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators      = [6] if debug else [50, 100, 200, 350, 500]
 
-    adaboost_grid = list(ParameterGrid(dict(
-        class_weight=['balanced'],
-        max_depth=max_depth,
-        min_samples_split=min_samples_split,
-        min_impurity_decrease=[0, 0.1, 0.2]
-    )))
-    adaboost_tree_selection = [DTC(**p) for p in adaboost_grid]
-    ada_base_estimators = [adaboost_tree_selection[0]] if debug else adaboost_tree_selection
+    knn_neighbors = [3]         if debug else [3, 5, 7]
+    knn_weights   = ['uniform'] if debug else ['uniform', 'distance']
+    knn_algorithm = ['brute']   if debug else ['ball_tree', 'kd_tree', 'brute']
+    knn_p         = [2]         if debug else [1, 2, 3]
+    knn_leaf_size = [30]        if debug else [20, 30, 40]
 
     k_best_features = [x_train_fsel.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=5, endpoint=True, dtype=int))
 
     models = [
         {
-            'model': AdaBoostClassifier,
+            'model': RandomForestClassifier,
             'parameters': {
-                'fs__n_features_to_select': k_best_features,
+                'fs__k': k_best_features,
+                'cm__criterion': ['entropy', 'gini'],
+                'cm__max_depth': max_depth,
+                'cm__min_samples_split': min_samples_split,
                 'cm__n_estimators': n_estimators,
-                'cm__base_estimator': ada_base_estimators,
+                'cm__class_weight': ['balanced'],
+            }
+        },
+        {
+            'model': KNC,
+            'parameters': {
+                'fs__k': k_best_features,
+                'cm__n_neighbors': knn_neighbors,
+                'cm__weights': knn_weights,
+                'cm__algorithm': knn_algorithm,
+                'cm__leaf_size': knn_leaf_size,
+                'cm__p': knn_p
             }
         }
     ]
@@ -278,7 +287,7 @@ def main(debug=False, outfile="out.csv"):
     best_models = []
     for model in models:
 
-        pl = Pipeline([('fs', RFE(DTC())), ('cm', model['model']())], memory=".")
+        pl = Pipeline([('fs', SelectKBest()), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification
@@ -300,7 +309,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('fs', RFE(DTC())), ('cm', final_model_type())])
+    final_model = Pipeline([('fs', SelectKBest()), ('cm', final_model_type())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_gs, y_train_gs)
 
