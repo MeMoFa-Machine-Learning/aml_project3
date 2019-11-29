@@ -17,6 +17,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from scipy.signal import savgol_filter
 from tqdm import tqdm
 from statistics import median as pymedian
 from scipy.stats import entropy as sci_entropy
@@ -121,7 +122,7 @@ def average_std_of_heartbeats(templates):
     return np.mean(np.std(templates, axis=0))
 
 
-def get_ecg_features(signal, waveletname, level=1):
+def get_ecg_features(signal, waveletname, level=None):
     list_coeff = pywt.wavedec(signal, waveletname, level=level)
     features = []
     for coeff in list_coeff:
@@ -210,7 +211,7 @@ def main(debug=False, outfile="out.csv"):
     training_data_dir = ospath.join("data", "training")
     testing_data_dir = ospath.join("data", "testing")
 
-    # read the data
+    # Load training data
     logging.info("Reading in training data...")
     train_data_x = read_in_irregular_csv(ospath.join(training_data_dir, "X_train.csv"), debug=debug)
     train_data_y = pd.read_csv(ospath.join(training_data_dir, "y_train.csv"), delimiter=",")["y"]
@@ -220,25 +221,31 @@ def main(debug=False, outfile="out.csv"):
     y_train_orig = train_data_y.values
     logging.info("Finished reading in data.")
 
-    # Extract the features of training set
+    # Pre-processing step: Savitzky-Golay filtering
+    smoothed_train = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), train_data_x))
+
+    # Extract features of training set
     logging.info("Extracting features...")
-    x_train_fsel = extract_manual_features(train_data_x)
+    x_train_fsel = extract_manual_features(smoothed_train)
     logging.info("Finished extracting features")
 
-    # load raw ECG test data
+    # Load raw ECG testing data
     logging.info("Reading in testing data...")
     test_data_x = read_in_irregular_csv(ospath.join(testing_data_dir, "X_test.csv"), debug=debug)
     logging.info("Finished reading in data.")
 
-    # Extract the features of testing set
+    # Pre-processing step: Savitzky-Golay filtering
+    smoothed_test = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), train_data_x))
+
+    # Extract features of testing set
     logging.info("Extracting features...")
-    x_test_fsel = extract_manual_features(test_data_x)
+    x_test_fsel = extract_manual_features(smoothed_test)
     logging.info("Finished extracting features")
 
-    # Preprocessing Step for meta-feature calculation: StandardScaler
+    # Pre-processing step for meta-feature calculation: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
-    # Grid Search
+    # Grid search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators      = [6] if debug else [50, 100, 200, 350, 500]
@@ -265,7 +272,7 @@ def main(debug=False, outfile="out.csv"):
         }
     ]
 
-    # Perform the cross-validation
+    # Perform cross-validation
     x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
 
     best_models = []
@@ -274,7 +281,7 @@ def main(debug=False, outfile="out.csv"):
         pl = Pipeline([('fs', RFE(DTC())), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
-        # C-support vector classification according to a one-vs-one scheme
+        # C-support vector classification
         grid_search = GridSearchCV(pl, model['parameters'], scoring="f1_micro", n_jobs=-1, cv=kfold, verbose=1)
         grid_result = grid_search.fit(x_train_gs, y_train_gs)
         # Calculate statistics and calculate on hold-out
@@ -308,7 +315,7 @@ def main(debug=False, outfile="out.csv"):
     results[:, 0] = list(range(x_test_fsel.shape[0]))
     results[:, 1] = y_predict
 
-    # save the output weights
+    # Save the output weights
     if not ospath.exists(output_pathname):
         makedirs(output_pathname)
     np.savetxt(output_filepath, results, fmt=["%1.1f", "%1.1f"], newline="\n", delimiter=",", header="id,y",
