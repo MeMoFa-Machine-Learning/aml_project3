@@ -240,7 +240,7 @@ def main(debug=False, outfile="out.csv"):
         {
             'model': RandomForestClassifier,
             'parameters': {
-                'fs__k': k_best_features,
+                'fs__n_features_to_select': k_best_features,
                 'cm__criterion': ['entropy', 'gini'],
                 'cm__max_depth': max_depth,
                 'cm__min_samples_split': min_samples_split,
@@ -251,7 +251,7 @@ def main(debug=False, outfile="out.csv"):
         {
             'model': AdaBoostClassifier,
             'parameters': {
-                'fs__k': k_best_features,
+                'fs__n_features_to_select': k_best_features,
                 'cm__n_estimators': n_estimators,
                 'cm__base_estimator': ada_base_estimators,
             }
@@ -264,7 +264,7 @@ def main(debug=False, outfile="out.csv"):
     best_models = []
     for model in models:
 
-        pl = Pipeline([('fs', SelectKBest()), ('cm', model['model']())], memory=".")
+        pl = Pipeline([('fs', RFE(DTC())), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
         # C-support vector classification according to a one-vs-one scheme
@@ -286,7 +286,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Fit final model
     logging.info("Fitting the final model...")
-    final_model = Pipeline([('fs', SelectKBest()), ('cm', final_model_type())])
+    final_model = Pipeline([('fs', RFE(DTC())), ('cm', final_model_type())])
     final_model.set_params(**final_model_params)
     final_model.fit(x_train_gs, y_train_gs)
 
