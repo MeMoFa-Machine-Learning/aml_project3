@@ -7,10 +7,8 @@ from itertools import tee
 from csv import reader
 import biosppy.signals.ecg as ecg
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import SelectKBest
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
+from sklearn.feature_selection import SelectKBest, RFE
+from sklearn.model_selection import ParameterGrid
 from sklearn.tree import DecisionTreeClassifier as DTC
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
@@ -117,6 +115,10 @@ def std_p_peak(templates):
     return np.mean(np.std(templates[:, :30], axis=0))
 
 
+def average_std_of_heartbeats(templates):
+    return np.mean(np.std(templates, axis=0))
+
+
 def extract_manual_features(samples):
     manual_features_array = []
     for i, raw_ecg in enumerate(tqdm(samples)):
@@ -132,9 +134,10 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(average_r_amplitude(filtered, rpeaks) - median_r_amplitude(filtered, rpeaks))
         feature_extracted_samples.append(std_r_amplitude(filtered, rpeaks))  # standard deviation R amplitude
         feature_extracted_samples.append(iqr_r_amplitude(filtered, rpeaks))  # IQR R amplitude
-        feature_extracted_samples.append(ecg_domain(mean_template))
-        feature_extracted_samples.append(std_p_peak(templates))
-        feature_extracted_samples.append(std_t_peak(templates))
+        feature_extracted_samples.append(ecg_domain(mean_template))  # Difference between highest and lowest point
+        feature_extracted_samples.append(std_p_peak(templates))  # Standard deviation of p peak
+        feature_extracted_samples.append(std_t_peak(templates))  # Standard deviation of t peak
+        feature_extracted_samples.append(average_std_of_heartbeats(templates))
         # average peak amplitudes and indices
         p_peak = extract_p_peak(mean_template)
         t_peak = extract_t_peak(mean_template)
@@ -219,19 +222,17 @@ def main(debug=False, outfile="out.csv"):
 
     # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
-    min_samples_split = [5] if debug else [2, 3, 4, 5, 6, 7]
+    min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators      = [6] if debug else [50, 100, 200, 350, 500]
 
-    adaboost_tree_selection = [
-        DTC(max_depth=1, class_weight='balanced', min_samples_split=5),
-        DTC(max_depth=3, class_weight='balanced', min_samples_split=5),
-        DTC(max_depth=5, class_weight='balanced', min_samples_split=5),
-        DTC(max_depth=7, class_weight='balanced', min_samples_split=5),
-        DTC(max_depth=9, class_weight='balanced', min_samples_split=5),
-        DTC(max_depth=11, class_weight='balanced', min_samples_split=5)
-    ]
-
-    ada_base_estimators = [DTC(max_depth=3)] if debug else adaboost_tree_selection
+    adaboost_grid = list(ParameterGrid(dict(
+        class_weight=['balanced'],
+        max_depth=[1, 3, 5, 7, 9, 11],
+        min_samples_split=min_samples_split,
+        min_impurity_decrease=[0, 0.1, 0.2]
+    )))
+    adaboost_tree_selection = [DTC(**p) for p in adaboost_grid]
+    ada_base_estimators = [adaboost_tree_selection[0]] if debug else adaboost_tree_selection
 
     k_best_features = [x_train_rest.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_rest.shape[1], num=5, endpoint=True, dtype=int))
 
