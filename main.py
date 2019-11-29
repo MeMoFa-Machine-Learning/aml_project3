@@ -19,7 +19,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from statistics import median as pymedian
-
+from scipy.stats import entropy as sci_entropy
+import pywt
+from collections import Counter
 
 import logging
 logging.getLogger().setLevel(logging.INFO)
@@ -119,6 +121,40 @@ def average_std_of_heartbeats(templates):
     return np.mean(np.std(templates, axis=0))
 
 
+def get_ecg_features(signal, waveletname, level=1):
+    list_coeff = pywt.wavedec(signal, waveletname)
+    features = []
+    for coeff in list_coeff:
+        features += get_features(coeff)
+    return features
+
+
+def calculate_entropy(list_values):
+    counter_values = Counter(list_values).most_common()
+    probabilities = [elem[1] / len(list_values) for elem in counter_values]
+    calculated_entropy = sci_entropy(probabilities)
+    return calculated_entropy
+
+
+def calculate_statistics(list_values):
+    n5 = np.nanpercentile(list_values, 5)
+    n25 = np.nanpercentile(list_values, 25)
+    n75 = np.nanpercentile(list_values, 75)
+    n95 = np.nanpercentile(list_values, 95)
+    median = np.nanpercentile(list_values, 50)
+    mean = np.nanmean(list_values)
+    std = np.nanstd(list_values)
+    var = np.nanvar(list_values)
+    rms = np.nanmean(np.sqrt(list_values ** 2))
+    return [n5, n25, n75, n95, median, mean, std, var, rms]
+
+
+def get_features(list_values):
+    calculated_entropy = calculate_entropy(list_values)
+    stats = calculate_statistics(list_values)
+    return [calculated_entropy] + stats
+
+
 def extract_manual_features(samples):
     manual_features_array = []
     for i, raw_ecg in enumerate(tqdm(samples)):
@@ -159,24 +195,13 @@ def extract_manual_features(samples):
         # slope of T peak: a6
         feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1] + 2]) / (t_peak[1] - (t_peak[1] + 2)))
 
+        symlet_features = get_ecg_features(mean_template, 'sym4', level=5)
+        feature_extracted_samples.extend(symlet_features)
+        daubechies_features = get_ecg_features(mean_template, 'db4', level=7)
+        feature_extracted_samples.extend(daubechies_features)
+
         manual_features_array.append(feature_extracted_samples)
     return np.array(manual_features_array)
-
-
-def calculate_pre_features(x_pre, y_pre, x_train, x_test):
-    classifiers = [
-        RandomForestClassifier(class_weight='balanced', n_estimators=30),
-        QuadraticDiscriminantAnalysis(),
-        LinearDiscriminantAnalysis()
-    ]
-
-    x_train_pres, x_test_pres = ([], [])
-    for classifier in classifiers:
-        classifier.fit(x_pre, y_pre)
-        x_train_pres.append(classifier.predict(x_train))
-        x_test_pres.append(classifier.predict(x_test))
-
-    return np.array(x_train_pres).transpose(), np.array(x_test_pres).transpose()
 
 
 def main(debug=False, outfile="out.csv"):
@@ -213,13 +238,6 @@ def main(debug=False, outfile="out.csv"):
     # Preprocessing Step for meta-feature calculation: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
-    # Class-features calculation
-    x_train_rest, x_feature, y_train_rest, y_feature = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
-
-    class_features_train, class_features_test = calculate_pre_features(x_feature, y_feature, x_train_rest, x_test_fsel)
-    x_train_rest = np.hstack((x_train_rest, class_features_train))
-    x_test_fsel = np.hstack((x_test_fsel, class_features_test))
-
     # Grid Search
     max_depth         = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
@@ -227,27 +245,16 @@ def main(debug=False, outfile="out.csv"):
 
     adaboost_grid = list(ParameterGrid(dict(
         class_weight=['balanced'],
-        max_depth=[1, 3, 5, 7, 9, 11],
+        max_depth=max_depth,
         min_samples_split=min_samples_split,
         min_impurity_decrease=[0, 0.1, 0.2]
     )))
     adaboost_tree_selection = [DTC(**p) for p in adaboost_grid]
     ada_base_estimators = [adaboost_tree_selection[0]] if debug else adaboost_tree_selection
 
-    k_best_features = [x_train_rest.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_rest.shape[1], num=5, endpoint=True, dtype=int))
+    k_best_features = [x_train_fsel.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=5, endpoint=True, dtype=int))
 
     models = [
-        {
-            'model': RandomForestClassifier,
-            'parameters': {
-                'fs__n_features_to_select': k_best_features,
-                'cm__criterion': ['entropy', 'gini'],
-                'cm__max_depth': max_depth,
-                'cm__min_samples_split': min_samples_split,
-                'cm__n_estimators': n_estimators,
-                'cm__class_weight': ['balanced'],
-            }
-        },
         {
             'model': AdaBoostClassifier,
             'parameters': {
@@ -259,7 +266,7 @@ def main(debug=False, outfile="out.csv"):
     ]
 
     # Perform the cross-validation
-    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_rest, y_train_rest, test_size=0.1, random_state=0)
+    x_train_gs, x_ho, y_train_gs, y_ho = train_test_split(x_train_fsel, y_train_orig, test_size=0.1, random_state=0)
 
     best_models = []
     for model in models:
