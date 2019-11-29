@@ -95,25 +95,25 @@ def ecg_domain(mean_template):
     return np.max(mean_template) - np.min(mean_template)
 
 
-def extract_r_peak(mean_template):
+def extract_r_peak_mean(mean_template):
     interval_max_i = np.argmax(mean_template[30:90])
     return np.max(mean_template[30:90]), interval_max_i + 30
 
 
-def extract_p_peak(mean_template):
+def extract_p_peak_mean(mean_template):
     return np.max(mean_template[:35]), np.argmax(mean_template[:35])
 
 
-def extract_t_peak(mean_template):
+def extract_t_peak_mean(mean_template):
     return np.max(mean_template[100:]), np.argmax(mean_template[100:])
 
 
 def std_t_peak(templates):
-    return np.mean(np.std(templates[:, 100:], axis=0))
+    return np.std(np.max(templates[:, 100:150], axis=0))
 
 
 def std_p_peak(templates):
-    return np.mean(np.std(templates[:, :30], axis=0))
+    return np.std(np.max(templates[:, :30], axis=0))
 
 
 def average_std_of_heartbeats(templates):
@@ -174,9 +174,9 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(std_t_peak(templates))  # Standard deviation of t peak
         feature_extracted_samples.append(average_std_of_heartbeats(templates))
         # average peak amplitudes and indices
-        p_peak = extract_p_peak(mean_template)
-        t_peak = extract_t_peak(mean_template)
-        r_peak = extract_r_peak(mean_template)
+        p_peak = extract_p_peak_mean(mean_template)
+        t_peak = extract_t_peak_mean(mean_template)
+        r_peak = extract_r_peak_mean(mean_template)
         feature_extracted_samples.append(p_peak[0])  # average amplitude of P peak
         feature_extracted_samples.append(t_peak[0])  # average amplitude of T peak
         feature_extracted_samples.append(r_peak[1] - p_peak[1])  # average PR interval
@@ -233,7 +233,7 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Finished reading in data.")
 
     # Pre-processing step: Savitzky-Golay filtering
-    smoothed_test = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), train_data_x))
+    smoothed_test = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), test_data_x))
 
     # Extract features of testing set
     logging.info("Extracting features...")
