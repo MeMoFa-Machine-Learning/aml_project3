@@ -122,7 +122,7 @@ def average_std_of_heartbeats(templates):
 
 
 def get_ecg_features(signal, waveletname, level=1):
-    list_coeff = pywt.wavedec(signal, waveletname)
+    list_coeff = pywt.wavedec(signal, waveletname, level=level)
     features = []
     for coeff in list_coeff:
         features += get_features(coeff)
