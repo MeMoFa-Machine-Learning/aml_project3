@@ -246,6 +246,9 @@ def main(debug=False, outfile="out.csv"):
     # Extract features of training set
     logging.info("Extracting features...")
     x_train_fsel = extract_manual_features(smoothed_train)
+    train_valid = ~np.isnan(x_train_fsel).any(axis=1)
+    x_train_fsel = x_train_fsel[train_valid]
+    y_train_orig = y_train_orig[train_valid]
     logging.info("Finished extracting features")
 
     # Load raw ECG testing data
@@ -259,6 +262,8 @@ def main(debug=False, outfile="out.csv"):
     # Extract features of testing set
     logging.info("Extracting features...")
     x_test_fsel = extract_manual_features(smoothed_test)
+    test_valid = ~np.isnan(x_test_fsel).any(axis=1)
+    x_test_fsel = x_test_fsel[test_valid]
     logging.info("Finished extracting features")
 
     # Pre-processing step for meta-feature calculation: StandardScaler
