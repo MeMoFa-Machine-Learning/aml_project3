@@ -23,6 +23,7 @@ import pywt
 from collections import Counter
 
 import logging
+
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(format='%(asctime)s - %(message)s')
 
@@ -108,6 +109,18 @@ def extract_t_peak_mean(mean_template):
     return np.max(mean_template[100:]), np.argmax(mean_template[100:])
 
 
+def extract_t_peaks(templates):
+    return np.max(templates[:, 100:150], axis=1), np.argmax(templates[:, 100:150], axis=1)
+
+
+def extract_r_peaks(templates):
+    return np.max(templates[:, 30:90], axis=1), np.argmax(templates[:, 30:90], axis=1)
+
+
+def extract_p_peaks(templates):
+    return np.max(templates[:, :30], axis=1), np.argmax(templates[:, :30], axis=1)
+
+
 def std_t_peak(templates):
     return np.std(np.max(templates[:, 100:150], axis=0))
 
@@ -160,6 +173,9 @@ def extract_manual_features(samples):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300,
                                                                                            show=False)
         mean_template = np.mean(templates, axis=0)
+        p_peak_amplitudes, p_peak_locations = extract_p_peaks(templates)
+        r_peak_amplitdues, r_peak_locations = extract_r_peaks(templates)
+        t_peak_amplitudes, t_peak_locations = extract_t_peaks(templates)
 
         feature_extracted_samples = []
         rr_interval_statistics = extract_rr_interval(rpeaks)
@@ -170,9 +186,18 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(std_r_amplitude(filtered, rpeaks))  # standard deviation R amplitude
         feature_extracted_samples.append(iqr_r_amplitude(filtered, rpeaks))  # IQR R amplitude
         feature_extracted_samples.append(ecg_domain(mean_template))  # Difference between highest and lowest point
-        feature_extracted_samples.append(std_p_peak(templates))  # Standard deviation of p peak
-        feature_extracted_samples.append(std_t_peak(templates))  # Standard deviation of t peak
         feature_extracted_samples.append(average_std_of_heartbeats(templates))
+
+        # Heartbeat data
+        feature_extracted_samples.extend(calculate_statistics(heartrates))
+
+        # Individual p and t-peak statistics
+        feature_extracted_samples.extend(calculate_statistics(t_peak_amplitudes))  # P-peak stats
+        feature_extracted_samples.extend(calculate_statistics(p_peak_amplitudes))  # T-peak stats
+        feature_extracted_samples.append(np.mean(t_peak_locations - p_peak_locations))
+        feature_extracted_samples.append(np.mean(r_peak_locations - p_peak_locations))
+        feature_extracted_samples.append(np.mean(t_peak_locations - r_peak_locations))
+
         # average peak amplitudes and indices
         p_peak = extract_p_peak_mean(mean_template)
         t_peak = extract_t_peak_mean(mean_template)
@@ -181,6 +206,7 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(t_peak[0])  # average amplitude of T peak
         feature_extracted_samples.append(r_peak[1] - p_peak[1])  # average PR interval
         feature_extracted_samples.append(t_peak[1] - r_peak[1])  # average RT interval
+
         # slope of P peak: a1
         feature_extracted_samples.append((p_peak[0] - mean_template[p_peak[1] - 2]) / (p_peak[1] - (p_peak[1] - 2)))
         # slope of P peak: a2
@@ -193,11 +219,6 @@ def extract_manual_features(samples):
         feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1] - 2]) / (t_peak[1] - (t_peak[1] - 2)))
         # slope of T peak: a6
         feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1] + 2]) / (t_peak[1] - (t_peak[1] + 2)))
-
-        symlet_features = get_ecg_features(mean_template, 'sym4', level=5)
-        feature_extracted_samples.extend(symlet_features)
-        daubechies_features = get_ecg_features(mean_template, 'db4', level=7)
-        feature_extracted_samples.extend(daubechies_features)
 
         manual_features_array.append(feature_extracted_samples)
     return np.array(manual_features_array)
@@ -220,7 +241,7 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Finished reading in data.")
 
     # Pre-processing step: Savitzky-Golay filtering
-    smoothed_train = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), train_data_x))
+    smoothed_train = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), train_data_x))
 
     # Extract features of training set
     logging.info("Extracting features...")
@@ -233,7 +254,7 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Finished reading in data.")
 
     # Pre-processing step: Savitzky-Golay filtering
-    smoothed_test = list(map(lambda x: savgol_filter(x,  window_length=31, polyorder=8), test_data_x))
+    smoothed_test = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), test_data_x))
 
     # Extract features of testing set
     logging.info("Extracting features...")
@@ -244,17 +265,18 @@ def main(debug=False, outfile="out.csv"):
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
     # Grid search
-    max_depth         = [3] if debug else [3, 5, 7, 9, 11]
+    max_depth = [3] if debug else [3, 5, 7, 9, 11]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
-    n_estimators      = [6] if debug else [50, 100, 200, 350, 500]
+    n_estimators = [6] if debug else [50, 100, 200, 350, 500]
 
-    knn_neighbors = [3]         if debug else [3, 5, 7]
-    knn_weights   = ['uniform'] if debug else ['uniform', 'distance']
-    knn_algorithm = ['brute']   if debug else ['ball_tree', 'kd_tree', 'brute']
-    knn_p         = [2]         if debug else [1, 2, 3]
-    knn_leaf_size = [30]        if debug else [20, 30, 40]
+    knn_neighbors = [3] if debug else [3, 5, 7]
+    knn_weights = ['uniform'] if debug else ['uniform', 'distance']
+    knn_algorithm = ['brute'] if debug else ['ball_tree', 'kd_tree', ]
+    knn_p = [2] if debug else [1, 2, 3]
+    knn_leaf_size = [30] if debug else [20, 30, 40]
 
-    k_best_features = [x_train_fsel.shape[1]] if debug else list(np.linspace(start=5, stop=x_train_fsel.shape[1], num=5, endpoint=True, dtype=int))
+    k_best_features = [x_train_fsel.shape[1]] if debug else list(
+        np.linspace(start=5, stop=x_train_fsel.shape[1], num=5, endpoint=True, dtype=int))
 
     models = [
         {
@@ -286,7 +308,6 @@ def main(debug=False, outfile="out.csv"):
 
     best_models = []
     for model in models:
-
         pl = Pipeline([('fs', SelectKBest()), ('cm', model['model']())], memory=".")
         kfold = StratifiedKFold(n_splits=15, shuffle=True, random_state=6)
 
