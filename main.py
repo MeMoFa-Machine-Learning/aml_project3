@@ -221,7 +221,7 @@ def extract_manual_features(samples):
         feature_extracted_samples.append((t_peak[0] - mean_template[t_peak[1] + 2]) / (t_peak[1] - (t_peak[1] + 2)))
 
         manual_features_array.append(feature_extracted_samples)
-    return np.array(manual_features_array)
+    return np.array(manual_features_array, dtype=np.float64)
 
 
 def main(debug=False, outfile="out.csv"):
