@@ -262,8 +262,14 @@ def main(debug=False, outfile="out.csv"):
     # Extract features of testing set
     logging.info("Extracting features...")
     x_test_fsel = extract_manual_features(smoothed_test)
-    test_valid = ~np.isnan(x_test_fsel).any(axis=1)
-    x_test_fsel = x_test_fsel[test_valid]
+
+    # Check if any test datapoints have invalid features and replace them at random with valid ones
+    test_invalid = np.isnan(x_test_fsel).any(axis=1)
+    x_test_valid = x_test_fsel[~test_invalid]
+    number_invalid_test = np.sum(test_invalid, dtype=int)
+    logging.info("{} test samples without valid features...".format(number_invalid_test))
+    x_test_fsel[test_invalid] = x_test_valid[np.random.randint(x_test_valid.shape[0], size=number_invalid_test, dtype=int)]
+
     logging.info("Finished extracting features")
 
     # Pre-processing step for meta-feature calculation: StandardScaler
