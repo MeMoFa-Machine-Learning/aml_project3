@@ -314,7 +314,7 @@ def main(debug=False, outfile="out.csv"):
     n_estimators = [6] if debug else [50, 100, 200, 350, 500]
 
     knn_neighbors = [3] if debug else [3, 5, 7]
-    knn_weights = ['uniform'] if debug else ['uniform', 'distance']
+    knn_weights = ['uniform'] if debug else ['distance', ]
     knn_algorithm = ['brute'] if debug else ['kd_tree', ]
     knn_p = [2] if debug else [1, 2, 3]
     knn_leaf_size = [30] if debug else [20, 30, 40]
@@ -334,17 +334,7 @@ def main(debug=False, outfile="out.csv"):
                 'cm__class_weight': ['balanced'],
             }
         },
-        {
-            'model': KNC,
-            'parameters': {
-                'fs__k': k_best_features,
-                'cm__n_neighbors': knn_neighbors,
-                'cm__weights': knn_weights,
-                'cm__algorithm': knn_algorithm,
-                'cm__leaf_size': knn_leaf_size,
-                'cm__p': knn_p
-            }
-        }
+
     ]
 
     # Perform cross-validation
