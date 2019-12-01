@@ -258,12 +258,9 @@ def main(debug=False, outfile="out.csv"):
     y_train_orig = train_data_y.values
     logging.info("Finished reading in data.")
 
-    # Pre-processing step: Savitzky-Golay filtering
-    smoothed_train = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), train_data_x))
-
     # Extract features of training set
     logging.info("Extracting features...")
-    x_train_fsel = extract_manual_features(smoothed_train)
+    x_train_fsel = extract_manual_features(train_data_x)
     train_valid = ~np.isnan(x_train_fsel).any(axis=1)
     x_train_fsel = x_train_fsel[train_valid]
     y_train_orig = y_train_orig[train_valid]
@@ -274,12 +271,9 @@ def main(debug=False, outfile="out.csv"):
     test_data_x = read_in_irregular_csv(ospath.join(testing_data_dir, "X_test.csv"), debug=debug)
     logging.info("Finished reading in data.")
 
-    # Pre-processing step: Savitzky-Golay filtering
-    smoothed_test = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), test_data_x))
-
     # Extract features of testing set
     logging.info("Extracting features...")
-    x_test_fsel = extract_manual_features(smoothed_test)
+    x_test_fsel = extract_manual_features(test_data_x)
 
     # Check if any test datapoints have invalid features and replace them at random with valid ones
     test_invalid = np.isnan(x_test_fsel).any(axis=1)
