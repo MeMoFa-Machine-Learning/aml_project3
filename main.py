@@ -184,7 +184,7 @@ def extract_manual_features(samples):
     manual_features_array = []
     for i, raw_ecg in enumerate(tqdm(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300,
-                                                                                           show=True)
+                                                                                           show=False)
         mean_template = np.mean(templates, axis=0)
         p_peak_amplitudes, p_peak_locations = extract_p_peaks(templates)
         r_peak_amplitdues, r_peak_locations = extract_r_peaks(templates)
@@ -277,7 +277,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Extract features of training set
     logging.info("Extracting features...")
-    x_train_fsel = extract_manual_features(train_data_x)
+    x_train_fsel = extract_manual_features(smoothed_train)
     train_valid = ~np.isnan(x_train_fsel).any(axis=1)
     x_train_fsel = x_train_fsel[train_valid]
     y_train_orig = y_train_orig[train_valid]
@@ -294,7 +294,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Extract features of testing set
     logging.info("Extracting features...")
-    x_test_fsel = extract_manual_features(test_data_x)
+    x_test_fsel = extract_manual_features(smoothed_test)
 
     # Check if any test datapoints have invalid features and replace them at random with valid ones
     test_invalid = np.isnan(x_test_fsel).any(axis=1)
