@@ -294,7 +294,7 @@ def main(debug=False, outfile="out.csv"):
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
     # Grid search
-    max_depth = [3] if debug else [7, 9, 11, 13]
+    max_depth = [3] if debug else [7, 9, 11, ]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators = [6] if debug else [50, 100, 200, 350, 500]
 
