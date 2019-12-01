@@ -106,19 +106,32 @@ def extract_p_peak_mean(mean_template):
 
 
 def extract_t_peak_mean(mean_template):
-    return np.max(mean_template[100:]), np.argmax(mean_template[100:])
-
-
-def extract_t_peaks(templates):
-    return np.max(templates[:, 100:150], axis=1), np.argmax(templates[:, 100:150], axis=1)
-
-
-def extract_r_peaks(templates):
-    return np.max(templates[:, 30:90], axis=1), np.argmax(templates[:, 30:90], axis=1)
+    interval_max_i = np.argmax(mean_template[100:150])
+    return np.max(mean_template[100:150]), interval_max_i + 100
 
 
 def extract_p_peaks(templates):
-    return np.max(templates[:, :30], axis=1), np.argmax(templates[:, :30], axis=1)
+    return extract_peaks(templates, 0, 30)
+
+
+def extract_t_peaks(templates):
+    return extract_peaks(templates, 100, 150)
+
+
+def extract_r_peaks(templates):
+    return extract_peaks(templates, 30, 90)
+
+
+def extract_s_valley(templates):
+    return extract_valleys(templates, 30, 90)
+
+
+def extract_peaks(templates, offset, limit):
+    return np.max(templates[:, offset:limit], axis=1), offset + np.argmax(templates[:, offset:limit], axis=1)
+
+
+def extract_valleys(templates, offset, limit):
+    return np.min(templates[:, offset:limit], axis=1), offset + np.argmin(templates[:, offset:limit], axis=1)
 
 
 def std_t_peak(templates):
@@ -176,6 +189,7 @@ def extract_manual_features(samples):
         p_peak_amplitudes, p_peak_locations = extract_p_peaks(templates)
         r_peak_amplitdues, r_peak_locations = extract_r_peaks(templates)
         t_peak_amplitudes, t_peak_locations = extract_t_peaks(templates)
+        s_peak_amplitudes, s_peak_locations = extract_s_valley(templates)
 
         feature_extracted_samples = []
         rr_interval_statistics = extract_rr_interval(rpeaks)
@@ -194,9 +208,13 @@ def extract_manual_features(samples):
         # Individual p and t-peak statistics
         feature_extracted_samples.extend(calculate_statistics(t_peak_amplitudes))  # P-peak stats
         feature_extracted_samples.extend(calculate_statistics(p_peak_amplitudes))  # T-peak stats
+        feature_extracted_samples.extend(calculate_statistics(s_peak_amplitudes))  # S-peak stats
         feature_extracted_samples.append(np.mean(t_peak_locations - p_peak_locations))
         feature_extracted_samples.append(np.mean(r_peak_locations - p_peak_locations))
         feature_extracted_samples.append(np.mean(t_peak_locations - r_peak_locations))
+        feature_extracted_samples.append(np.mean(t_peak_locations - s_peak_locations))
+        feature_extracted_samples.append(np.mean(s_peak_locations - r_peak_locations))
+        feature_extracted_samples.append(np.mean(s_peak_locations - p_peak_locations))
 
         # average peak amplitudes and indices
         p_peak = extract_p_peak_mean(mean_template)
@@ -259,7 +277,7 @@ def main(debug=False, outfile="out.csv"):
 
     # Extract features of training set
     logging.info("Extracting features...")
-    x_train_fsel = extract_manual_features(smoothed_train)
+    x_train_fsel = extract_manual_features(train_data_x)
     train_valid = ~np.isnan(x_train_fsel).any(axis=1)
     x_train_fsel = x_train_fsel[train_valid]
     y_train_orig = y_train_orig[train_valid]
@@ -276,22 +294,28 @@ def main(debug=False, outfile="out.csv"):
 
     # Extract features of testing set
     logging.info("Extracting features...")
-    x_test_fsel = extract_manual_features(smoothed_test)
-    test_valid = ~np.isnan(x_test_fsel).any(axis=1)
-    x_test_fsel = x_test_fsel[test_valid]
+    x_test_fsel = extract_manual_features(test_data_x)
+
+    # Check if any test datapoints have invalid features and replace them at random with valid ones
+    test_invalid = np.isnan(x_test_fsel).any(axis=1)
+    x_test_valid = x_test_fsel[~test_invalid]
+    number_invalid_test = np.sum(test_invalid, dtype=int)
+    logging.info("{} test samples without valid features...".format(number_invalid_test))
+    x_test_fsel[test_invalid] = x_test_valid[np.random.randint(x_test_valid.shape[0], size=number_invalid_test, dtype=int)]
+
     logging.info("Finished extracting features")
 
     # Pre-processing step for meta-feature calculation: StandardScaler
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
     # Grid search
-    max_depth = [3] if debug else [3, 5, 7, 9, 11]
+    max_depth = [3] if debug else [7, 9, 11, ]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators = [6] if debug else [50, 100, 200, 350, 500]
 
     knn_neighbors = [3] if debug else [3, 5, 7]
     knn_weights = ['uniform'] if debug else ['uniform', 'distance']
-    knn_algorithm = ['brute'] if debug else ['ball_tree', 'kd_tree', ]
+    knn_algorithm = ['brute'] if debug else ['kd_tree', ]
     knn_p = [2] if debug else [1, 2, 3]
     knn_leaf_size = [30] if debug else [20, 30, 40]
 
