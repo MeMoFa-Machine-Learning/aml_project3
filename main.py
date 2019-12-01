@@ -15,7 +15,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, butter, lfilter
 from tqdm import tqdm
 from statistics import median as pymedian
 from scipy.stats import entropy as sci_entropy
@@ -171,7 +171,7 @@ def extract_manual_features(samples):
     manual_features_array = []
     for i, raw_ecg in enumerate(tqdm(samples)):
         ts, filtered, rpeaks, templates_ts, templates, heartrates_ts, heartrates = ecg.ecg(raw_ecg, sampling_rate=300,
-                                                                                           show=False)
+                                                                                           show=True)
         mean_template = np.mean(templates, axis=0)
         p_peak_amplitudes, p_peak_locations = extract_p_peaks(templates)
         r_peak_amplitdues, r_peak_locations = extract_r_peaks(templates)
@@ -224,6 +224,19 @@ def extract_manual_features(samples):
     return np.array(manual_features_array, dtype=np.float64)
 
 
+def butter_lowpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs  # Nyquist frequeny is half the sampling frequency
+    normal_cutoff = cutoff / nyq
+    b, a = butter(N=order, Wn=normal_cutoff, btype='low', analog=False, output='ba')
+    return b, a
+
+
+def butter_lowpass_filter(data, cutoff, fs, order):
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+
 def main(debug=False, outfile="out.csv"):
     output_pathname = "output"
     output_filepath = ospath.join(output_pathname, outfile)
@@ -241,7 +254,8 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Finished reading in data.")
 
     # Pre-processing step: Savitzky-Golay filtering
-    smoothed_train = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), train_data_x))
+    # smoothed_train = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), train_data_x))
+    smoothed_train = list(map(lambda x: butter_lowpass_filter(x, 70, 300, 8), train_data_x))
 
     # Extract features of training set
     logging.info("Extracting features...")
@@ -257,7 +271,8 @@ def main(debug=False, outfile="out.csv"):
     logging.info("Finished reading in data.")
 
     # Pre-processing step: Savitzky-Golay filtering
-    smoothed_test = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), test_data_x))
+    # smoothed_test = list(map(lambda x: savgol_filter(x, window_length=31, polyorder=8), test_data_x))
+    smoothed_test = list(map(lambda x: butter_lowpass_filter(x, 70, 300, 8), test_data_x))
 
     # Extract features of testing set
     logging.info("Extracting features...")
