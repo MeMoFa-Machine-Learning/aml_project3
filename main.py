@@ -212,6 +212,9 @@ def extract_manual_features(samples):
         feature_extracted_samples.append(np.mean(t_peak_locations - p_peak_locations))
         feature_extracted_samples.append(np.mean(r_peak_locations - p_peak_locations))
         feature_extracted_samples.append(np.mean(t_peak_locations - r_peak_locations))
+        feature_extracted_samples.append(np.mean(t_peak_locations - s_peak_locations))
+        feature_extracted_samples.append(np.mean(s_peak_locations - r_peak_locations))
+        feature_extracted_samples.append(np.mean(s_peak_locations - p_peak_locations))
 
         # average peak amplitudes and indices
         p_peak = extract_p_peak_mean(mean_template)
@@ -291,7 +294,7 @@ def main(debug=False, outfile="out.csv"):
     x_train_fsel, x_test_fsel = perform_data_scaling(x_train_fsel, x_test_fsel)
 
     # Grid search
-    max_depth = [3] if debug else [3, 5, 7, 9, 11]
+    max_depth = [3] if debug else [7, 9, 11, 13]
     min_samples_split = [5] if debug else [2, 3, 4, 6, 8]
     n_estimators = [6] if debug else [50, 100, 200, 350, 500]
 
